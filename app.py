@@ -100,8 +100,7 @@
 #     cleanup_recommendation_agents()
 #     st.write("Cleanup completed.")
 
-# st.session_state.on_session_end = on_session_end
-import streamlit as st
+# st.session_state.on_session_end = on_session_endimport streamlit as st
 from backend import build_graph, cleanup_recommendation_agents, get_cache_stats
 import os
 
@@ -133,13 +132,29 @@ st.markdown("""
         margin: 5px 0;
         text-align: right;
     }
-     /* Keep chat input readable - multiple selectors */
+    /* Keep chat input readable - multiple selectors */
     .stChatInput input,
     .stChatInput textarea,
     input[data-testid="stChatInput"],
     textarea[data-testid="stChatInput"] {
         color: #000000 !important;
         background-color: #ffffff !important;
+    }
+    /* Fix button visibility */
+    .stButton button,
+    button[data-testid="baseButton-secondary"],
+    button[data-testid="baseButton-primary"] {
+        background-color: #0066cc !important;
+        color: #ffffff !important;
+        border: 1px solid #0066cc !important;
+        border-radius: 6px !important;
+    }
+    .stButton button:hover,
+    button[data-testid="baseButton-secondary"]:hover,
+    button[data-testid="baseButton-primary"]:hover {
+        background-color: #0052a3 !important;
+        color: #ffffff !important;
+        border: 1px solid #0052a3 !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -151,21 +166,19 @@ st.write("Welcome! Chat with our intelligent music store assistant.")
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
 
-# ====== CUSTOMER ID INPUT SECTION ======
-st.markdown("### Customer Information")
-col1, col2 = st.columns([2, 1])
+# ====== CUSTOMER ID INPUT & NEW CHAT BUTTON ======
+col1, col2 = st.columns([3, 1])
 
 with col1:
     customer_id_input = st.text_input(
-        "Enter your Customer ID (e.g., CUST4847):",
+        "Enter your Customer ID:",
         value=st.session_state.get("customer_id", ""),
-        placeholder="CUST4847",
-        help="Enter your customer ID to start chatting"
+        placeholder="CUST4847"
     )
 
 with col2:
-    st.markdown("<br>", unsafe_allow_html=True)  # Add some spacing
-    if st.button("🆕 New Chat Session", type="secondary"):
+    st.markdown("<br>", unsafe_allow_html=True)  # Add spacing
+    if st.button("New Chat"):
         start_new_chat()
         st.rerun()
 
@@ -173,41 +186,24 @@ with col2:
 def start_new_chat():
     """Complete session reset - clears both backend and frontend"""
     # Backend cleanup
-    if "customer_id" in st.session_state and st.session_state.customer_id:
-        cleanup_recommendation_agents(st.session_state.customer_id)
-    else:
-        cleanup_recommendation_agents()  # Clean all if no specific customer
+    cleanup_recommendation_agents()
     
-    # Frontend cleanup - clear all session state
+    # Frontend cleanup - clear all session state except customer_id
     st.session_state.history = []
     st.session_state.last_agent = ""
     st.session_state.router_conversation_id = ""
     
-    # Keep customer_id if entered, but clear chat
+    # Update customer_id if entered
     if customer_id_input.strip():
         st.session_state.customer_id = customer_id_input.strip().upper()
-    
-    # Force app rebuild with new customer
-    if "app" in st.session_state:
-        del st.session_state.app
-    
-    st.success("New chat session started!")
 
-# ====== CUSTOMER ID VALIDATION ======
-def is_valid_customer_id(cid):
-    """Basic validation for customer ID format"""
-    return cid and len(cid.strip()) >= 6 and cid.strip().upper().startswith("CUST")
+# Update customer_id when input changes
+if customer_id_input.strip():
+    st.session_state.customer_id = customer_id_input.strip().upper()
 
-# Update session state customer_id when input changes
-if customer_id_input.strip() and customer_id_input.strip().upper() != st.session_state.get("customer_id", ""):
-    if is_valid_customer_id(customer_id_input):
-        st.session_state.customer_id = customer_id_input.strip().upper()
-    else:
-        st.warning("Please enter a valid Customer ID (format: CUST followed by numbers, e.g., CUST4847)")
-
-# ====== APP INITIALIZATION (CONDITIONAL) ======
-if "customer_id" in st.session_state and st.session_state.customer_id and is_valid_customer_id(st.session_state.customer_id):
-    # Initialize app state only if we have valid customer ID
+# ====== APP INITIALIZATION ======
+if "customer_id" in st.session_state and st.session_state.customer_id:
+    # Initialize app state
     if "app" not in st.session_state:
         os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
         st.session_state.app = build_graph()
@@ -215,10 +211,6 @@ if "customer_id" in st.session_state and st.session_state.customer_id and is_val
         st.session_state.last_agent = ""
         st.session_state.router_conversation_id = ""
     
-    # Display current customer info
-    st.info(f"Chat session active for: **{st.session_state.customer_id}**")
-    
-    # ====== CHAT INTERFACE ======
     # Show chat history
     for msg in st.session_state.history:
         role, text = msg
@@ -252,52 +244,9 @@ if "customer_id" in st.session_state and st.session_state.customer_id and is_val
             st.markdown(agent_response)
         
         st.session_state.last_agent = handled_by
-    
-    # ====== CONTROLS SECTION ======
-    st.markdown("---")
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        if st.button("📊 Show Cache Stats"):
-            stats = get_cache_stats()
-            st.json(stats)
-    
-    with col2:
-        if st.button("🧹 Clear Current Session"):
-            start_new_chat()
-            st.rerun()
-    
-    with col3:
-        if st.button("🗑️ Complete Cleanup"):
-            cleanup_recommendation_agents()
-            st.session_state.clear()
-            st.success("Complete cleanup done! Please refresh the page.")
 
 else:
-    # ====== NO VALID CUSTOMER ID STATE ======
-    if not customer_id_input.strip():
-        st.info("👆 Please enter your Customer ID above to start chatting")
-    elif not is_valid_customer_id(customer_id_input):
-        st.warning("❌ Invalid Customer ID format. Please use format like: CUST4847")
-    
-    # Show some example customer IDs or help
-    with st.expander("Need help with Customer ID?"):
-        st.markdown("""
-        **Customer ID Format:**
-        - Must start with 'CUST'
-        - Followed by 4 or more numbers
-        - Examples: CUST4847, CUST1234, CUST5678
-        
-        **Sample Customer IDs for testing:**
-        - CUST4847
-        - CUST1234  
-        - CUST5678
-        """)
+    st.info("Please enter your Customer ID above to start chatting")
 
-# ====== FOOTER INFO ======
-st.markdown("---")
-st.markdown("**🎵 Music Store AI Assistant** - Powered by LangGraph & OpenAI")
-if "customer_id" in st.session_state and st.session_state.customer_id:
-    st.caption(f"Current session: {st.session_state.customer_id} | Chat messages: {len(st.session_state.get('history', []))}")
 
 
