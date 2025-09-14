@@ -168,23 +168,7 @@ st.write("Welcome! Chat with our intelligent music store assistant.")
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
 
-# ====== CUSTOMER ID INPUT & NEW CHAT BUTTON ======
-col1, col2 = st.columns([3, 1])
-
-with col1:
-    customer_id_input = st.text_input(
-        "Enter your Customer ID:",
-        value=st.session_state.get("customer_id", ""),
-        placeholder="CUST4847"
-    )
-
-with col2:
-    st.markdown("<br>", unsafe_allow_html=True)  # Add spacing
-    if st.button("New Chat"):
-        start_new_chat()
-        st.rerun()
-
-# ====== NEW CHAT FUNCTION ======
+# ====== NEW CHAT FUNCTION (DEFINED FIRST) ======
 def start_new_chat():
     """Complete session reset - clears both backend and frontend"""
     # Backend cleanup
@@ -196,8 +180,26 @@ def start_new_chat():
     st.session_state.router_conversation_id = ""
     
     # Update customer_id if entered
+    customer_id_input = st.session_state.get("customer_id_input", "")
     if customer_id_input.strip():
         st.session_state.customer_id = customer_id_input.strip().upper()
+
+# ====== CUSTOMER ID INPUT & NEW CHAT BUTTON ======
+col1, col2 = st.columns([3, 1])
+
+with col1:
+    customer_id_input = st.text_input(
+        "Enter your Customer ID:",
+        value=st.session_state.get("customer_id", ""),
+        placeholder="CUST4847",
+        key="customer_id_input"
+    )
+
+with col2:
+    st.markdown("<br>", unsafe_allow_html=True)  # Add spacing
+    if st.button("New Chat"):
+        start_new_chat()
+        st.rerun()
 
 # Update customer_id when input changes
 if customer_id_input.strip():
@@ -249,6 +251,7 @@ if "customer_id" in st.session_state and st.session_state.customer_id:
 
 else:
     st.info("Please enter your Customer ID above to start chatting")
+
 
 
 
