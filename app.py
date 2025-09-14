@@ -141,6 +141,12 @@ st.markdown("""
         color: #000000 !important;
         background-color: #ffffff !important;
     }
+    /* Fix customer ID input readability */
+    .stTextInput input,
+    input[data-testid="stTextInput"] {
+        color: #000000 !important;
+        background-color: #ffffff !important;
+}
     /* Fix button visibility */
     .stButton button,
     button[data-testid="baseButton-secondary"],
@@ -250,6 +256,7 @@ if "customer_id" in st.session_state and st.session_state.customer_id:
 
 else:
     st.info("Please enter your Customer ID above to start chatting")
+
 
 
 
