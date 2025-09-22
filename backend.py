@@ -29,7 +29,7 @@ openai_client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 # Keep existing LLM for other agents
 llm = ChatOpenAI(
-    model="gpt-4o-mini",
+    model="gpt-4.1-nano",
     temperature=0,
     api_key=OPENAI_API_KEY
 )
@@ -147,7 +147,7 @@ def get_purchase_history(customer_id: str, limit_rows: int = 200):
     # OPTIMIZATION 1: Check cache first
     cache_key = f"purchase_history_{customer_id}"
     if cache_key in _customer_cache:
-        print(f"✅ Using cached purchase history for {customer_id}")
+        # print(f"✅ Using cached purchase history for {customer_id}")
         return _customer_cache[cache_key]
 
     con = get_duckdb_con()
@@ -244,7 +244,7 @@ def get_owned_profile(recent_products: List[Any]) -> List[str]:
     owned_docs = []
     
     # OPTIMIZATION 3: Batch vector searches instead of individual searches
-    print(f"🔍 Batch searching for {len(owned_queries)} owned products...")
+    print(f"🔍 Searching for {len(owned_queries)} owned products...")
     
     # Search for multiple products at once with higher k value
     for query_batch in [owned_queries[i:i+5] for i in range(0, len(owned_queries), 5)]:
@@ -262,7 +262,7 @@ def get_owned_profile(recent_products: List[Any]) -> List[str]:
                         pname = line.replace("Product Name:", "").strip()
                         break
                 if pname == oq:
-                    print("✔ Matched exact owned product:", pname)
+                    print("Analysing the detailed features of --:", pname)
                     owned_docs.append(d)
                     break
 
@@ -273,7 +273,7 @@ def fetch_customer_purchase_history_with_docs(customer_id: str) -> Dict[str, Any
     # OPTIMIZATION 1: Check if full customer data is already cached
     full_cache_key = f"customer_full_{customer_id}"
     if full_cache_key in _customer_cache:
-        print(f"✅ Using cached full customer data for {customer_id}")
+        # print(f"✅ Using cached full customer data for {customer_id}")
         return _customer_cache[full_cache_key]
 
     purchase_history = get_purchase_history(customer_id)
@@ -292,7 +292,7 @@ def fetch_customer_purchase_history_with_docs(customer_id: str) -> Dict[str, Any
 
     # OPTIMIZATION 1: Cache the full result
     _customer_cache[full_cache_key] = result
-    print(f"✅ Cached full customer data for {customer_id}")
+    # print(f"✅ Cached full customer data for {customer_id}")
     
     return result
 
@@ -300,7 +300,7 @@ def fetch_customer_purchase_history_with_docs(customer_id: str) -> Dict[str, Any
 @dataclass
 class AgentConfig:
     openai_api_key: str
-    model: str = "gpt-4o-mini"
+    model: str = "gpt-4.1-mini"
 
 class MusicStoreAgent:
     def __init__(self, config: AgentConfig):
@@ -372,7 +372,7 @@ class MusicStoreAgent:
     def _create_system_message(self, customer_data: Dict[str, Any]) -> str:
         """Create a comprehensive system message with customer context"""
         if customer_data['is_new_customer']:
-            system_message = """You are an intelligent music store recommendation agent. 
+            system_message = """You are an AI assistant helping a human customer service agent provide music store recommendations during a live call. 
 
 CUSTOMER STATUS: NEW CUSTOMER
 - This customer has no purchase history
@@ -383,21 +383,31 @@ CUSTOMER STATUS: NEW CUSTOMER
 TOOL USAGE RULES:
 - ONLY use catalog_search_tool when the customer specifically asks about products, wants recommendations, or mentions specific instrument types
 - DO NOT use tools for greetings, general conversation, or non-product related questions
-- For "hello", "hi", general questions, respond normally without any tool calls
 - Use tools only when you need to search for actual products to help the customer
 - ALWAYS get ONLY two relevant product documents when using the tool
+- After receiving tool results, IMMEDIATELY provide recommendations based on those results
+- Do NOT make additional tool calls once you have received product data
+- Use the search results to give specific product recommendations
 
 CAPABILITIES:
 - Search the music catalog using catalog_search_tool ONLY when product search is needed
 - Provide detailed product comparisons and explanations
-- Help customers understand different product categories
+- Help customers understand different product categories (Electric guitar, electric drum, Keyboards)
 - Make personalized recommendations
+
+RESPONSE FORMAT:
+- Frame responses as guidance to the human agent, not direct customer responses
+- Give specific talking points about why recommended products are best for them
+- Use phrases like "You could ask...", "I'd recommend suggesting...", "Based on this, you might want to..."
+
+Example: Instead of "What type of music do you play?", say "Ask them what type of music they're interested in playing to better understand their needs."
 
 IMPORTANT RULES:
 - Always be helpful and knowledgeable about music products
 - Ask clarifying questions to understand customer needs
-- Explain technical terms in simple language for beginners
-- Suggest products that match their skill level and interests"""
+- Suggest products that match their skill level and interests
+- NEVER tell the human agent to use any tools, catalog_search_tool or any internal tools in your response
+- NEVER tell human agent to search for products by themselve"""
 
         else:
             owned_products_str = ", ".join(customer_data['recent_products'][:10])
@@ -408,7 +418,8 @@ IMPORTANT RULES:
                 for i, doc in enumerate(customer_data['purchased_product_docs'][:5])
             ])
             
-            system_message = f"""You are an intelligent music store recommendation agent.
+            system_message = f"""You are an AI assistant helping a human customer service agent serve a returning customer during a live call.
+
 
 CUSTOMER STATUS: RETURNING CUSTOMER
 
@@ -420,10 +431,13 @@ DETAILED PRODUCT INFORMATION:
 
 TOOL USAGE RULES:
 - After you receive catalog search results, use them to answer the user's question. Do not call the tool again for the same query. Respond to the user with a recommendation.
+- Do NOT use tools for explaining previous recommendations
+- Do NOT use tools when asked 'why' about already shown products
 - ONLY use catalog_search_tool when the customer specifically asks about products, wants recommendations, or mentions specific instrument types
 - DO NOT use tools for greetings, general conversation, or non-product related questions
 - For "hello", "hi", general questions, respond normally without any tool calls
 - Use tools only when you need to search for actual products to help the customer
+
 
 CAPABILITIES:
 - Search the music catalog using catalog_search_tool ONLY when product search is needed
@@ -432,12 +446,23 @@ CAPABILITIES:
 - Provide detailed explanations about why certain products are recommended
 - ALWAYS get two relevant product documents when using the tool
 
+RESPONSE FORMAT:
+- Provide guidance to the human agent, not direct customer responses
+- Use "Tell them...", "You should mention...", "I'd suggest recommending..."
+- Give specific talking points about why certain products complement their existing gear
+- Alert about products to avoid (already owned)
+
+Example: Instead of "I see you have a Fender guitar", say "Remind them they already have a Fender guitar, so you might suggest a complementary amplifier or effects pedal instead."
+
 IMPORTANT RULES:
 - NEVER recommend products the customer already owns (check the owned products list above)
 - Focus on complementary products, upgrades, or different categories
-- Reference their existing products when making recommendations
+- ALWAYS Reference their existing products when making recommendations
 - Explain how new products work with their current setup
-- If they ask about a product they already own, acknowledge it and suggest alternatives or accessories"""
+- If they ask about a product they already own, acknowledge it and suggest alternatives or accessories
+- NEVER tell the human agent to use any tools, catalog_search_tool or any internal tools in your response
+- NEVER tell human agent to search for products by themselve"""
+
 
         return system_message
     
@@ -458,60 +483,91 @@ IMPORTANT RULES:
                 ]
             )
             
-            max_tool_loops = 1
-            loop_count = 0
+            # Step 1: Initial LLM response (can use tools)
+            response = self.client.responses.create(
+                model=self.model,
+                tools=self.tools,
+                conversation=self.conversation_id,
+                parallel_tool_calls=False,
+                input=[{"role": "user", "content": user_message}]
+            )
 
-            while True:
-                response = self.client.responses.create(
-                    model=self.model,
-                    tools=self.tools,
-                    conversation=self.conversation_id,
-                    input=[{"role": "user", "content": user_message}]
-                )
-
-                tool_calls = []
-                if hasattr(response, 'output') and response.output:
-                    for out in response.output:
-                        if hasattr(out, 'type') and out.type == "function_call":
-                            tool_calls.append(out)
-
-                if not tool_calls or loop_count >= max_tool_loops:
-                    break
-
-                tool_outputs = []
-                for tool_call in tool_calls:
-                    tool_name = getattr(tool_call, 'name', None)
-                    tool_arguments = getattr(tool_call, 'arguments', None)
-                    call_id = getattr(tool_call, 'call_id', f"call_{len(tool_outputs)}")
-
-                    if tool_name == "catalog_search_tool":
-                        if isinstance(tool_arguments, str):
-                            args = json.loads(tool_arguments)
-                        else:
-                            args = tool_arguments
-
-                        result = self.handle_tool_call("catalog_search_tool", args)
-                        tool_outputs.append({
-                            "type": "function_call_output",
-                            "call_id": call_id,  # Always use the model's call_id!
-                            "output": json.dumps(result)
-                        })
-
-                if tool_outputs:
-                    response = self.client.responses.create(
-                        model=self.model,
-                        conversation=self.conversation_id,
-                        input=tool_outputs
-                    )
-                else:
-                    break
-
-                loop_count += 1
-
-            # After loop: fallback if no assistant message
-            assistant_content = ""
+            # Step 2: Check if tool calls were made
+            tool_calls = []
             if hasattr(response, 'output') and response.output:
                 for out in response.output:
+                    if hasattr(out, 'type') and out.type == "function_call":
+                        tool_calls.append(out)
+
+            # Step 3: If no tool calls, extract text response
+            if not tool_calls:
+                assistant_content = ""
+                if hasattr(response, 'output') and response.output:
+                    for out in response.output:
+                        if hasattr(out, 'content'):
+                            if isinstance(out.content, str):
+                                assistant_content += out.content
+                            elif hasattr(out.content, 'text'):
+                                assistant_content += out.content.text
+                            elif isinstance(out.content, list) and len(out.content) > 0:
+                                if hasattr(out.content[0], 'text'):
+                                    assistant_content += out.content[0].text
+                                elif isinstance(out.content[0], str):
+                                    assistant_content += out.content[0]
+                return assistant_content if assistant_content else "No response generated."
+
+            # Step 4: Execute tool calls
+            tool_outputs = []
+            for tool_call in tool_calls:
+                tool_name = getattr(tool_call, 'name', None)
+                tool_arguments = getattr(tool_call, 'arguments', None)
+                call_id = getattr(tool_call, 'call_id', f"call_{len(tool_outputs)}")
+
+                if tool_name == "catalog_search_tool":
+                    if isinstance(tool_arguments, str):
+                        args = json.loads(tool_arguments)
+                    else:
+                        args = tool_arguments
+
+                    result = self.handle_tool_call("catalog_search_tool", args)
+                    tool_outputs.append({
+                        "type": "function_call_output",
+                        "call_id": call_id,
+                        "output": json.dumps(result)
+                    })
+
+            # Step 5: FORCE text response with tools DISABLED
+            # final_response = self.client.responses.create(
+            #     model=self.model,
+            #     conversation=self.conversation_id,
+            #     tools=[],  # Empty tools
+            #     input=tool_outputs + [{
+            #             "role": "system", 
+            #             "content": "Based on the tool results above, provide a final text response. NEVER call any more tools."
+            #         }]
+            # )
+            final_response = self.client.responses.create(
+                model=self.model,
+                conversation=self.conversation_id,
+                tools=[],  # Disable further tool calls
+                input=[
+                    {
+                        "role": "system",
+                        "content": "You have received tool results. Summarize them into a clear and helpful final response. NEVER call more tools."
+                    },
+                    {
+                        "role": "user",
+                        "content": user_message  # the original query
+                    },
+                    *tool_outputs
+                ]
+            )
+
+
+            # Step 6: Extract text from final response
+            assistant_content = ""
+            if hasattr(final_response, 'output') and final_response.output:
+                for out in final_response.output:
                     if hasattr(out, 'content'):
                         if isinstance(out.content, str):
                             assistant_content += out.content
@@ -523,41 +579,18 @@ IMPORTANT RULES:
                             elif isinstance(out.content[0], str):
                                 assistant_content += out.content[0]
 
-            if not assistant_content and tool_outputs:
-                # Fallback: summarize tool outputs
-                summaries = []
-                for o in tool_outputs:
-                    data = json.loads(o["output"])
-                    docs = data.get("documents", [])
-                    for doc in docs:
-                        # Try to pretty print if doc is JSON, else just show as string
-                        try:
-                            doc_obj = json.loads(doc)
-                            # Customize this as needed for your product fields
-                            summary = f"{doc_obj.get('name', 'Product')}: {doc_obj.get('description', '')} (Price: {doc_obj.get('price', 'N/A')})"
-                        except Exception:
-                            summary = doc if isinstance(doc, str) else str(doc)
-                        summaries.append(summary)
-                if summaries:
-                    assistant_content = "Here are some options I found:\n" + "\n".join(summaries)
-                else:
-                    assistant_content = "No response generated."
-
-            if not assistant_content:
-                assistant_content = "No response generated."
-
-            return assistant_content
+            return assistant_content if assistant_content else "No response generated."
             
         except Exception as e:
             return f"❌ Error processing your message: {str(e)}"
-    
+
     def handle_tool_call(self, tool_name: str, tool_args: Dict[str, Any]) -> Dict[str, Any]:
         """Handle tool calls from the agent (catalog search)"""
         if tool_name == "catalog_search_tool":
             query = tool_args.get("query", "")
             k = tool_args.get("k", 2)
             
-            print(f"🔍 Searching catalog for: {query}")
+            print(f"🔍 Searching catalog to get relevant instruments")
             result = catalog_search_tool(query, k)
             
             return result
@@ -637,7 +670,7 @@ No explanations. No extra fields."""
         return None
 
 def router_agent(state: AgentState) -> AgentState:
-    print("--- Router Agent: LLM-based ---")
+    print("Router Agent Thinking........")
     q = state["query"]
     router_conv_id = state.get("router_conversation_id", "")
 
@@ -661,7 +694,7 @@ def router_agent(state: AgentState) -> AgentState:
 
     # LLM se routing decision lo
     response = openai_client.responses.create(
-        model="gpt-4o-mini",
+        model="gpt-4.1-mini",
         conversation=router_conv_id,
         input=[{"role": "user", "content": q}]
     )
@@ -696,7 +729,7 @@ def router_agent(state: AgentState) -> AgentState:
 # ====== Recommendation Agent (OPTIMIZED) ======
 def recommendation_agent(state: AgentState) -> AgentState:
     """Recommendation agent using MusicStoreAgent with caching"""
-    print("--- Recommendation Agent: Using MusicStoreAgent ---")
+    print("Recommendation Agent thinking.......")
     
     customer_id = state["customer_id"]
     user_query = state["query"]
@@ -708,7 +741,7 @@ def recommendation_agent(state: AgentState) -> AgentState:
             agent = MusicStoreAgent(AgentConfig(openai_api_key=OPENAI_API_KEY))
             agent.initialize_customer_session(customer_id)
             _recommendation_agents[customer_id] = agent
-            print(f"✅ Agent initialized and cached for customer: {customer_id}")
+            print(f"✅ Agent initialized for customer: {customer_id}")
         
         agent = _recommendation_agents[customer_id]
         response = agent.chat(user_query)
@@ -727,7 +760,7 @@ def recommendation_agent(state: AgentState) -> AgentState:
 
 def order_tracking_agent(state: AgentState) -> AgentState:
     """Order tracking via DuckDB + LLM."""
-    print("--- Order Tracking Agent: LLM + DuckDB Tool ---")
+    print("Order Tracking Agent Thinking.........")
     user_text = state["query"]
     customer_id_from_state = state.get("customer_id", "")
 
@@ -774,7 +807,7 @@ def order_tracking_agent(state: AgentState) -> AgentState:
             return {"response": "Please share your customer ID like `CUST4240` or an order ID like `ORD000123`."}
 
         if df.empty:
-            return {"response": "I couldn't find any orders for that ID."}
+            return {"response": "No ordered products"}
 
         def to_jsonable(x):
             if x is None or (isinstance(x, float) and pd.isna(x)): return None
@@ -801,15 +834,28 @@ def order_tracking_agent(state: AgentState) -> AgentState:
     except Exception as e:
         return {"response": f"Error fetching order data: {e}"}
 
+   
+
     prompt_template = ChatPromptTemplate.from_messages([
         ("system",
-         "You are an order tracking assistant. "
-         "You receive full order rows (status, purchase date, ETA, delivered date, items, types). "
-         "Answer the user's query using only the relevant fields. "
-         "If multiple rows are provided, summarize appropriately. "
-         "If metadata includes total/returned, you MAY mention how many are shown."),
-        ("human", "User query: {query}\n\nOrder data:\n{order_data}\n\nMeta (optional):\n{meta}")
+        "You are an AI order tracking assistant helping a human customer service agent during a live call. "
+        "You receive one or more order rows (status, purchase date, estimated delivery, delivered date, items, categories). "
+        "Your job is to extract and present only the details relevant to the user's query. "
+    
+        "\n\nImportant Guidelines:\n"
+        "- Always phrase the response for the agent, not the customer directly.\n"
+        "- If the query is about products/items → return only the list of ordered products.\n"
+        "- If the query is about order status/delivery → return order status, dates, and delivery info.\n"
+        "- If the query is about both → include both status + items.\n"
+        "- If multiple orders are provided, summarize each one clearly.\n"
+        "- Format output with short headings + bullet points so it's scannable.\n"),
+        
+        ("human",
+        "User query: {query}\n\nOrder data:\n{order_data}\n\nMeta (optional):\n{meta}")
     ])
+
+
+
     chain = prompt_template | llm | StrOutputParser()
     response = chain.invoke({
         "query": user_text,
@@ -826,7 +872,7 @@ def order_tracking_agent(state: AgentState) -> AgentState:
 
 # ====== General Agent ======
 def general_agent(state: AgentState) -> AgentState:
-    print("--- General Agent: In action ---")
+    print(" General Agent Thinking.......")
     prompt_template = ChatPromptTemplate.from_messages([
         ("system", "You are a helpful customer service assistant. Handle general inquiries, company policies, greetings, and basic product information. For specific product recommendations or detailed shopping assistance, politely suggest they ask for product recommendations."),
         ("human", "User query: {query}"),
