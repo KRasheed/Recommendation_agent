@@ -376,7 +376,7 @@ class MusicStoreAgent:
 
 CUSTOMER STATUS: NEW CUSTOMER
 - This customer has no purchase history
-- Provide general product education and broad recommendations
+- Provide professional product knowledge and broad recommendations
 - Ask about their musical interests and experience level
 - Suggest starter products and beginner-friendly options
 
@@ -1032,3 +1032,4 @@ if __name__ == "__main__":
         cleanup_recommendation_agents()
         print("Cleanup completed.")
         print(f"📊 Final Cache Stats: {get_cache_stats()}")
+
